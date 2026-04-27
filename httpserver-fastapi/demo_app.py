@@ -176,7 +176,7 @@ async def root():
 
 
 # Serving favicon locally
-@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/fastapi/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("favicon.svg", media_type="image/svg+xml")
 
