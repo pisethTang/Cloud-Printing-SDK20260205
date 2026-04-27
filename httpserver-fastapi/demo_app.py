@@ -6,6 +6,10 @@ import base64
 import secrets
 from datetime import datetime
 
+from fastapi.responses import FileResponse
+
+
+
 # Cloud print protocol data models
 
 
@@ -149,12 +153,17 @@ app = FastAPI(
     openapi_url="/fastapi/openapi.json"  # OpenAPI specification path
 )
 
+
+
+
 # Create APIRouter, all endpoints will have the /fastapi prefix
 api_router = APIRouter(prefix="/fastapi")
 
+
+
+
+
 # GET interface - root path
-
-
 @api_router.get("/", summary="Root path", tags=["System"])
 async def root():
     """Root path, returns API information"""
@@ -164,9 +173,16 @@ async def root():
         "docs": "/docs"
     }
 
+
+
+# Serving favicon locally
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("favicon.svg", media_type="image/svg+xml")
+
+
+
 # GET interface - FastAPI info
-
-
 @api_router.get("/info", summary="FastAPI info", tags=["System"])
 async def fastapi_info():
     """Returns FastAPI framework related information"""
