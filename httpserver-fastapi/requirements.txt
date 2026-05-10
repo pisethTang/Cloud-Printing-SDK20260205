@@ -7,5 +7,8 @@ uvicorn[standard]>=0.24.0,<1.0.0
 # 数据验证和序列化 Data validation and serialization
 pydantic>=2.0.0,<3.0.0
 
+# Environment variable loading from .env file
+python-dotenv>=1.0.0
+
 # Python标准库模块（这些通常不需要安装，但为了完整性列出）Python standard library modules (these are usually not required, but listed for completeness)
 # hashlib, base64, secrets, datetime 都是内置模块 all built-in modules

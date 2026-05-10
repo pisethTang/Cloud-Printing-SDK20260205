@@ -1,0 +1,20 @@
+[Unit]
+Description=MQTT Server
+After=network.target
+
+[Service]
+Type=simple
+User=yourusername
+Group=yourgroup
+WorkingDirectory=/path/to/mqtt_server
+ExecStart=/path/to/mqtt_server/venv/bin/python /path/to/mqtt_server/mqtt_server.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

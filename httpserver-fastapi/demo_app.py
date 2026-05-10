@@ -4,9 +4,21 @@ import uvicorn
 import hashlib
 import base64
 import secrets
+import os
 from datetime import datetime
 
 from fastapi.responses import FileResponse
+
+# Load environment variables from .env file (if present)
+from dotenv import load_dotenv
+load_dotenv()
+
+# Debug flag: set SKIP_SIGN_VERIFY=1 in .env or environment variable to bypass signature checks
+# Useful when you don't know the printer's configured sign key yet
+DEBUG_SKIP_SIGN_VERIFY = os.environ.get("SKIP_SIGN_VERIFY", "0") == "1"
+if DEBUG_SKIP_SIGN_VERIFY:
+    print("WARNING: SKIP_SIGN_VERIFY is enabled. Signature checks are DISABLED.")
+    print("   This is fine for testing, but do NOT use in production.")
 
 
 
@@ -70,6 +82,32 @@ printers_db = {
         "status": "OK",
         "sign_key": "Tkr5^d@mzCuT5!_L",  # Signature key stored in the printer
         "business_id": None
+    },
+    # Add the user's real printer (SN: 0162602060002)
+    # IMPORTANT: Set your printer's sign key to match this value using Setting Tools,
+    # or change this value to match your printer's configured sign key.
+    "0162602060002": {
+        "id": "0162602060002",
+        "version": "P80B-C20-1.05",
+        "status": "OK",
+        "sign_key": "Tkr5^d@mzCuT5!_L",  # <-- Change this if your printer uses a different key
+        "business_id": None
+    },
+    # Also accept Cloud ID 111 (from ClientTools HTTP Cloud tab)
+    "111": {
+        "id": "111",
+        "version": "P80B-C20-1.05",
+        "status": "OK",
+        "sign_key": "Tkr5^d@mzCuT5!_L",
+        "business_id": None
+    },
+    # Also accept TCP Cloud PrintID (default from ClientTools TCP Cloud tab)
+    "P80B_TEST": {
+        "id": "P80B_TEST",
+        "version": "P80B-C20-1.05",
+        "status": "OK",
+        "sign_key": "Tkr5^d@mzCuT5!_L",
+        "business_id": None
     }
 }
 
@@ -88,8 +126,13 @@ def verify_printer_sign(printer_id: str, version: str, status: str, sign: str) -
     sign = sha256_hash(sourStr)
     base_sign = base64(sign)
     """
+    if DEBUG_SKIP_SIGN_VERIFY:
+        print(f"[SIGN DEBUG] >> SKIPPING signature verification for {printer_id}")
+        return True
+
     printer = printers_db.get(printer_id)
     if not printer:
+        print(f"[SIGN DEBUG] Printer '{printer_id}' not found in database")
         return False
 
     sign_key = printer["sign_key"]
@@ -101,7 +144,11 @@ def verify_printer_sign(printer_id: str, version: str, status: str, sign: str) -
     
     # Directly Base64 encode the binary result
     calculated_sign = base64.b64encode(hash_bytes).decode('utf-8')
-    print(f"Calculated signature: {calculated_sign}")
+    print(f"[SIGN DEBUG] Printer: {printer_id}, Received sign: {sign}")
+    print(f"[SIGN DEBUG] Expected sign: {calculated_sign}")
+    print(f"[SIGN DEBUG] Source string: {source_str}")
+    if calculated_sign != sign:
+        print(f"[SIGN DEBUG] !! SIGNATURE MISMATCH — Use Setting Tools to set printer sign key to: '{sign_key}'")
     return calculated_sign == sign
 
 
@@ -115,8 +162,8 @@ def verify_result_sign(printer_id: str, business_id: str, status: str, sign: str
     """
     printer = printers_db.get(printer_id)
     if not printer:
+        print(f"[SIGN DEBUG] Printer '{printer_id}' not found in database")
         return False
-    # hello
     sign_key = printer["sign_key"]
     source_str = f"printerId={printer_id}&bussinessId={business_id}&status={status}{sign_key}"
 
@@ -126,7 +173,10 @@ def verify_result_sign(printer_id: str, business_id: str, status: str, sign: str
     
     # Directly Base64 encode the binary result
     calculated_sign = base64.b64encode(hash_bytes).decode('utf-8')
-    print(f"Calculated signature: {calculated_sign}")
+    print(f"[SIGN DEBUG] Printer: {printer_id}, Received sign: {sign}")
+    print(f"[SIGN DEBUG] Expected sign: {calculated_sign}")
+    if calculated_sign != sign:
+        print(f"[SIGN DEBUG] !! SIGNATURE MISMATCH — Use Setting Tools to set printer sign key to: '{sign_key}'")
     return calculated_sign == sign
 
 
@@ -207,10 +257,9 @@ async def fastapi_info():
 # 1. Query and report status request interface
 
 
-@api_router.post("/query", summary="Query and report status request", tags=["Cloud Print Protocol"])
-async def printer_query(request: PrinterQueryRequest):
+async def _printer_query(request: PrinterQueryRequest):
     """
-    Printer query status interface
+    Core printer query status logic
     Receives printer status report and returns print data
     """
     printer_id = request.printerId
@@ -219,7 +268,7 @@ async def printer_query(request: PrinterQueryRequest):
     sign = request.sign
 
     print(
-        f"Printer query request: printerId={printer_id}, version={version}, status={status}")
+        f"[REQUEST] Printer query: printerId={printer_id}, version={version}, status={status}")
 
     # Verify signature
     if not verify_printer_sign(printer_id, version, status, sign):
@@ -227,13 +276,14 @@ async def printer_query(request: PrinterQueryRequest):
 
     # Check if printer exists
     if printer_id not in printers_db:
+        print(f"[REQUEST] !! Printer '{printer_id}' not found in database. Known printers: {list(printers_db.keys())}")
         return PrinterQueryResponse(code=2, message="no printer").model_dump()
 
     # Update printer status
     printers_db[printer_id]["status"] = status
     printers_db[printer_id]["version"] = version
 
-    print(f"Printer status:{printers_db} ==== {printers_db[printer_id]}")
+    print(f"[REQUEST] Printer status updated: {printers_db[printer_id]}")
 
     # Check if there is pending print data
     if printer_id in print_jobs_db and print_jobs_db[printer_id]:
@@ -241,7 +291,7 @@ async def printer_query(request: PrinterQueryRequest):
         # Generate business ID
         business_id = generate_business_id()
         printers_db[printer_id]["business_id"] = business_id
-        print(f"Print data: has = {job_data}")
+        print(f"[REQUEST] [OK] Sending print data: job={job_data}, business_id={business_id}")
 
         # Read doc/response.bin file as print data
         try:
@@ -262,14 +312,26 @@ async def printer_query(request: PrinterQueryRequest):
             return PrinterQueryResponse(code=1, message="print data file not found").model_dump()
     else:
         # No print data, return JSON response
-        print(f"Print data: none")
+        print(f"[REQUEST] No print jobs pending")
         return PrinterQueryResponse(code=0, message="OK").model_dump()
 
 
-@api_router.post("/result", summary="Report print result", tags=["Cloud Print Protocol"])
-async def printer_result(request: PrinterResultRequest):
+@api_router.post("/query", summary="Query and report status request", tags=["Cloud Print Protocol"])
+async def printer_query(request: PrinterQueryRequest):
+    """Printer query status interface (via /fastapi/query)"""
+    return await _printer_query(request)
+
+
+# Direct route for printer polling at /query (printer expects this path)
+@app.post("/query", summary="Query and report status request (direct)", tags=["Cloud Print Protocol"], include_in_schema=False)
+async def printer_query_direct(request: PrinterQueryRequest):
+    """Printer query status interface (direct /query path for real printers)"""
+    return await _printer_query(request)
+
+
+async def _printer_result(request: PrinterResultRequest):
     """
-    Printer result report interface
+    Core printer result report logic
     Receives printer execution result report
     """
     printer_id = request.printerId
@@ -278,7 +340,7 @@ async def printer_result(request: PrinterResultRequest):
     sign = request.sign
 
     print(
-        f"Printer result report: printerId={printer_id}, businessId={business_id}, status={status}")
+        f"[REQUEST] Printer result: printerId={printer_id}, businessId={business_id}, status={status}")
 
     # Verify signature
     if not verify_result_sign(printer_id, business_id, status, sign):
@@ -286,21 +348,35 @@ async def printer_result(request: PrinterResultRequest):
 
     # Check if printer exists
     if printer_id not in printers_db:
+        print(f"[REQUEST] !! Printer '{printer_id}' not found in database")
         return PrinterQueryResponse(code=2, message="no printer").model_dump()
 
     # Process result report
     if status == "OK":
-        print(f"Print job {business_id} completed")
+        print(f"[REQUEST] [OK] Print job {business_id} completed")
         return PrinterQueryResponse(code=0, message="OK").model_dump()
     elif status == "BUSY":
-        print(f"Printer {printer_id} busy")
+        print(f"[REQUEST] Printer {printer_id} busy")
         return PrinterQueryResponse(code=0, message="OK").model_dump()
     elif status in ["NOPAPER", "RUNOUTOF", "COVEROPEN", "OVERHEART", "CUTERROR"]:
-        print(f"Printer {printer_id} error: {status}")
+        print(f"[REQUEST] [WARN] Printer {printer_id} error: {status}")
         return PrinterQueryResponse(code=0, message="OK").model_dump()
     else:
-        print(f"Printer {printer_id} unknown status: {status}")
+        print(f"[REQUEST] Printer {printer_id} unknown status: {status}")
         return PrinterQueryResponse(code=0, message="OK").model_dump()
+
+
+@api_router.post("/result", summary="Report print result", tags=["Cloud Print Protocol"])
+async def printer_result(request: PrinterResultRequest):
+    """Printer result report interface (via /fastapi/result)"""
+    return await _printer_result(request)
+
+
+# Direct route for printer at /result
+@app.post("/result", summary="Report print result (direct)", tags=["Cloud Print Protocol"], include_in_schema=False)
+async def printer_result_direct(request: PrinterResultRequest):
+    """Printer result report interface (direct /result path for real printers)"""
+    return await _printer_result(request)
 # Test interface - Add print job (for testing)
 
 
@@ -367,7 +443,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "demo_app:app",
         host="0.0.0.0",
-        port=8800,
+        port=8900,
         reload=True,
         log_level="info"
     )
