@@ -4,6 +4,7 @@ Run this after starting mqtt_server.py and connecting the printer.
 """
 import time
 import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
 
 # Printer configuration (must match ClientTools MQTT Cloud tab)
 PRINTER_DEVICE_ID = "111222555"
@@ -18,19 +19,35 @@ TOPIC_DATA = f"/sys/{PRINTER_DEVICE_ID}/user/data"
 TOPIC_STATUS = f"/sys/{PRINTER_DEVICE_ID}/user/status"
 
 
+# def build_hello_world_payload():
+#     """Build a simple ESC/POS payload for 'Hello World'"""
+#     # ESC/POS commands:
+#     # 0x1B 0x40 = Initialize printer
+#     # 0x1B 0x61 0x01 = Center alignment
+#     # Text = "Hello World!"
+#     # 0x0A 0x0A = Line feeds
+#     # 0x1B 0x69 = Full cut (ESC i)
+#     payload = bytes([
+#         0x1B, 0x40,       # Initialize printer
+#         0x1B, 0x61, 0x01, # Center align
+#     ]) + b"Hello World!\n\n\n\n\n\n" + bytes([
+#         # 0x1B, 0x69,               # Full cut (ESC i)
+#         # 0x1D, 0x56, 0x00,
+#     ])
+#     return payload
+
 def build_hello_world_payload():
-    """Build a simple ESC/POS payload for 'Hello World'"""
-    # ESC/POS commands:
-    # 0x1B 0x40 = Initialize printer
-    # 0x1B 0x61 0x01 = Center alignment
-    # Text = "Hello World!"
-    # 0x0A 0x0A = Line feeds
-    # 0x1D 0x56 0x42 0x00 = Partial cut
     payload = bytes([
-        0x1B, 0x40,       # Initialize printer
-        0x1B, 0x61, 0x01, # Center align
-    ]) + b"Hello World!\n\n" + bytes([
-        0x1D, 0x56, 0x42, 0x00,  # Partial cut
+        0x1B, 0x40,        # Initialize printer
+        0x1B, 0x61, 0x01,  # Center align
+    ]) + b"Hello World!\n\n\n\n\n\n" + bytes([
+        # 0x1D, 0x56, 0x00,  # GS V 0 — Full cut
+        # 0x1D, 0x56, 0x01
+        # 0x1D, 0x56, 0x31
+        # 0x1D, 0x56, 0x00,
+        0x1D, 0x56, 0x41,
+
+
     ])
     return payload
 
@@ -50,7 +67,7 @@ def on_message(client, userdata, msg):
 
 def main():
     client = mqtt.Client(
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        callback_api_version=CallbackAPIVersion.VERSION2,
         client_id="test_publisher_" + str(int(time.time()))
     )
     client.username_pw_set(USERNAME, PASSWORD)
