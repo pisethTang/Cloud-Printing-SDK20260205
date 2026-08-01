@@ -19,37 +19,19 @@ TOPIC_DATA = f"/sys/{PRINTER_DEVICE_ID}/user/data"
 TOPIC_STATUS = f"/sys/{PRINTER_DEVICE_ID}/user/status"
 
 
-# def build_hello_world_payload():
-#     """Build a simple ESC/POS payload for 'Hello World'"""
-#     # ESC/POS commands:
-#     # 0x1B 0x40 = Initialize printer
-#     # 0x1B 0x61 0x01 = Center alignment
-#     # Text = "Hello World!"
-#     # 0x0A 0x0A = Line feeds
-#     # 0x1B 0x69 = Full cut (ESC i)
-#     payload = bytes([
-#         0x1B, 0x40,       # Initialize printer
-#         0x1B, 0x61, 0x01, # Center align
-#     ]) + b"Hello World!\n\n\n\n\n\n" + bytes([
-#         # 0x1B, 0x69,               # Full cut (ESC i)
-#         # 0x1D, 0x56, 0x00,
-#     ])
-#     return payload
-
 def build_hello_world_payload():
     payload = bytes([
         0x1B, 0x40,        # Initialize printer
         0x1B, 0x61, 0x01,  # Center align
-    ]) + b"Hello World!\n\n\n\n\n\n" + bytes([
-        # 0x1D, 0x56, 0x00,  # GS V 0 — Full cut
-        # 0x1D, 0x56, 0x01
-        # 0x1D, 0x56, 0x31
-        # 0x1D, 0x56, 0x00,
-        0x1D, 0x56, 0x41,
-
-
-    ])
+    ]) + b"Hello World!\n\n" + bytes([0x1d, 0x56, 0x42, 0x00])
     return payload
+
+# def build_hello_world_payload():
+#     payload = bytes([
+#         0x1B, 0x40,        # Initialize printer
+#         0x1B, 0x61, 0x01,  # Center align
+#     ]) + b"Hello World!" + bytes([0x0a, 0x1b, 0x69])
+#     return payload
 
 
 def on_connect(client, userdata, flags, reason_code, properties=None):
